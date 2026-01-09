@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Photo Erosion Demo</title>
+  <style>
+    :root { --bg:#0b0c10; --panel:#12131a; --text:#e9e9ee; --muted:#a6a6b3; --line:#242635; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:18px 16px 10px; border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(11,12,16,.92); backdrop-filter: blur(8px); z-index:10; }
+    h1 { margin:0 0 6px; font-size:18px; font-weight:900; letter-spacing:.2px; }
+    .sub { margin:0; font-size:13px; color:var(--muted); line-height:1.4; }
+    .wrap { max-width:1100px; margin:0 auto; padding:14px 16px 26px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .badge { font-size:12px; color:#cfd0db; background:#1a1c27; border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+    .btn {
+      appearance:none; border:1px solid var(--line); background:#1a1c27; color:var(--text);
+      padding:10px 12px; border-radius:12px; font-size:14px; font-weight:800; cursor:pointer;
+    }
+    .btn:active { transform: translateY(1px); }
+    input[type="file"] { display:none; }
+
+    .grid { margin-top:14px; display:grid; gap:10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .card {
+      border:1px solid var(--line); background:#0f1017; border-radius:14px; overflow:hidden;
+      display:flex; flex-direction:column;
+      user-select:none; -webkit-tap-highlight-color: transparent;
+      cursor:pointer;
+    }
+    .thumb { width:100%; aspect-ratio: 1 / 1; background:#0b0c10; display:block; object-fit: cover; }
+    .meta { padding:10px 10px 12px; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+    .tag { font-size:12px; color:var(--muted); line-height:1.25; }
+    .status { font-size:12px; color:var(--muted); text-align:right; line-height:1.25; }
+    .infected { color:#ffcc66; font-weight:950; }
+    .ok { color:#8cff9a; font-weight:950; }
+
+    .hint { margin-top:10px; color:var(--muted); font-size:12px; line-height:1.55; }
+    .hr { height:1px; background:var(--line); margin:10px 0; border:0; }
+    .footer { margin-top:14px; color:var(--muted); font-size:12px; line-height:1.6; }
+
+    .empty {
+      margin-top:14px; padding:18px 14px;
+      border:1px dashed var(--line);
+      border-radius:14px;
+      color:var(--muted);
+      background:rgba(255,255,255,.02);
+      line-height:1.6;
+    }
+    .small { font-size:12px; color:var(--muted); }
+
+    /* Modal */
+    .modal {
+      position:fixed; inset:0; background:rgba(0,0,0,.72);
+      display:none; align-items:center; justify-content:center; padding:16px; z-index:50;
+    }
+    .modal.open { display:flex; }
+    .modalbox {
+      width:min(980px, 100%); background:#0f1017; border:1px solid var(--line);
+      border-radius:16px; overflow:hidden;
+    }
+    .modalhead {
+      padding:12px 14px; display:flex; justify-content:space-between; align-items:center;
+      border-bottom:1px solid var(--line);
+      gap:10px;
+    }
+    .modalhead b { font-size:14px; }
+    .close { border:1px solid var(--line); background:#1a1c27; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:800; }
+    .modalbody { padding:12px; }
+    .modalimg {
+      width:100%;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#0b0c10;
+      aspect-ratio: 4 / 3;
+      object-fit: contain;
+      display:block;
+      cursor:pointer;
+      user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .modalhint { margin-top:10px; color:var(--muted); font-size:12px; line-height:1.55; }
+    .chip { font-size:12px; padding:6px 10px; border-radius:999px; background:#1a1c27; border:1px solid var(--line); color:#cfd0db; }
+    .chip strong { color:#ffffff; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding:0 16px;">
+    <h1>Photo Erosion Demo（開くたびに侵食）</h1>
+    <p class="sub">開くたびに、保存済み写真のうち 1〜3 枚がランダムで侵食（レベル増加）。侵食写真は拡大表示で約6回タップすると正常に戻ります。</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <div class="row">
+      <span id="visitBadge" class="badge">訪問回数: -</span>
+      <span id="erodeBadge" class="badge">今回の侵食: -</span>
+      <span id="countBadge" class="badge">保存枚数: -</span>
+
+      <label class="btn" for="fileInput">写真を追加（複数可）</label>
+      <input id="fileInput" type="file" accept="image/*" multiple />
+
+      <button id="resetVisitsBtn" class="btn" title="侵食回数だけリセット（写真は残す）">侵食だけリセット</button>
+      <button id="clearAllBtn" class="btn" title="保存写真も全削除">全削除</button>
+    </div>
+
+    <hr class="hr" />
+    <div class="hint">
+      ・写真はブラウザ内（端末内）に保存され、次回以降も自動で表示されます（IndexedDB）。<br/>
+      ・侵食は強め：Lv1でもかなり荒いモザイク。Lv3では画像全体に強いモザイクがかかります。<br/>
+      ・<b>Lv2以上はモザイク部分がモノクロ化</b>します。<br/>
+      ・カードをクリックで拡大表示。拡大画像をタップすると回復カウントが進み、一定回数で侵食が下がります。
+    </div>
+  </div>
+
+  <div id="grid" class="grid" aria-live="polite"></div>
+  <div id="empty" class="empty" style="display:none;">
+    <b>まだ写真がありません。</b><br/>
+    上の「写真を追加」から複数枚選ぶと、この端末に保存されます。<br/>
+    <span class="small">※Safari/Chromeの“プライベートモード”では保存が消える場合があります。</span>
+  </div>
+
+  <div class="footer">
+    ※このデモは画像生成AIのAPIを使わず、ブラウザ内(Canvas)だけで「侵食」表現をしています。
+  </div>
+</div>
+
+<div id="modal" class="modal" role="dialog" aria-modal="true">
+  <div class="modalbox">
+    <div class="modalhead">
+      <b id="modalTitle">Preview</b>
+      <div class="row" style="gap:8px;">
+        <span id="modalStatus" class="chip">状態: -</span>
+        <span id="modalHeal" class="chip">回復: -</span>
+        <button id="closeModal" class="close">閉じる</button>
+      </div>
+    </div>
+    <div class="modalbody">
+      <img id="modalImg" class="modalimg" alt="preview" />
+      <div class="modalhint">
+        侵食中の写真は、<b>この拡大画像をタップ</b>すると回復します（目安：<b>約6回</b>で正常に戻る）。
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ------------------------------
+  // Settings
+  // ------------------------------
+  const VISIT_KEY = "photo_erosion_demo_visits_v3";
+  const MAX_LEVEL = 3;
+  const TAPS_PER_LEVEL = 2; // 3*2=6 taps
+  // ------------------------------
+
+  // Visit count
+  const visitCount = (parseInt(localStorage.getItem(VISIT_KEY) || "0", 10) + 1);
+  localStorage.setItem(VISIT_KEY, String(visitCount));
+  const thisErodeCount = 1 + Math.floor(Math.random() * 3);
+
+  // UI
+  const visitBadge = document.getElementById("visitBadge");
+  const erodeBadge = document.getElementById("erodeBadge");
+  const countBadge = document.getElementById("countBadge");
+  const fileInput = document.getElementById("fileInput");
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("empty");
+  const resetVisitsBtn = document.getElementById("resetVisitsBtn");
+  const clearAllBtn = document.getElementById("clearAllBtn");
+
+  // Modal
+  const modal = document.getElementById("modal");
+  const closeModal = document.getElementById("closeModal");
+  const modalImg = document.getElementById("modalImg");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalStatus = document.getElementById("modalStatus");
+  const modalHeal = document.getElementById("modalHeal");
+
+  visitBadge.textContent = `訪問回数: ${visitCount}`;
+  erodeBadge.textContent = `今回の侵食: 予定 ${thisErodeCount}枚`;
+
+  closeModal.addEventListener("click", () => modal.classList.remove("open"));
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
+
+  resetVisitsBtn.addEventListener("click", async () => {
+    localStorage.removeItem(VISIT_KEY);
+    const items = await dbGetAll();
+    await Promise.all(items.map(it => dbPut({ ...it, level: 0 })));
+    location.reload();
+  });
+
+  clearAllBtn.addEventListener("click", async () => {
+    await dbClear();
+    localStorage.removeItem(VISIT_KEY);
+    location.reload();
+  });
+
+  // ------------------------------
+  // IndexedDB wrapper
+  // ------------------------------
+  const DB_NAME = "photo_erosion_demo_db";
+  const DB_VERSION = 1;
+  const STORE = "photos";
+
+  function idbOpen(){
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          const os = db.createObjectStore(STORE, { keyPath: "id" });
+          os.createIndex("createdAt", "createdAt", { unique: false });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function withStore(mode, fn){
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const store = tx.objectStore(STORE);
+      let out;
+      try { out = fn(store); } catch(e){ reject(e); return; }
+      tx.oncomplete = () => resolve(out);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function dbPut(item){ return withStore("readwrite", (store) => store.put(item)); }
+  function dbAdd(item){ return withStore("readwrite", (store) => store.add(item)); }
+  function dbClear(){ return withStore("readwrite", (store) => store.clear()); }
+
+  function dbGetAll(){
+    return new Promise(async (resolve, reject) => {
+      try {
+        const db = await idbOpen();
+        const tx = db.transaction(STORE, "readonly");
+        const store = tx.objectStore(STORE);
+        const idx = store.index("createdAt");
+        const req = idx.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      } catch(e){ reject(e); }
+    });
+  }
+
+  // ------------------------------
+  // Utilities
+  // ------------------------------
+  function pickUniqueIndices(n, k){
+    const arr = [...Array(n).keys()];
+    for (let i = arr.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, Math.min(k, n));
+  }
+
+  function mulberry32(seed){
+    let t = seed >>> 0;
+    return function() {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function fileToBlob(file){ return file.slice(0, file.size, file.type); }
+
+  function blobToImage(blob){
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => resolve({ img, url });
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.src = url;
+    });
+  }
+
+  // ------------------------------
+  // Erosion rendering
+  // ------------------------------
+  function applyPixelateRect(ctx, sourceCanvas, x, y, w, h, pixelSize, overlay, grayscale){
+    const sw = Math.max(1, Math.floor(w / pixelSize));
+    const sh = Math.max(1, Math.floor(h / pixelSize));
+
+    const tmp = document.createElement("canvas");
+    tmp.width = sw;
+    tmp.height = sh;
+    const tctx = tmp.getContext("2d");
+
+    tctx.imageSmoothingEnabled = true;
+    tctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, sw, sh);
+
+    // 縮小した段階でグレースケール化（Lv2以上のモザイク部）
+    if (grayscale){
+      const imgData = tctx.getImageData(0, 0, sw, sh);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4){
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const y = Math.round(0.299*r + 0.587*g + 0.114*b);
+        d[i] = d[i+1] = d[i+2] = y;
+      }
+      tctx.putImageData(imgData, 0, 0);
+    }
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tmp, 0, 0, sw, sh, x, y, w, h);
+    ctx.restore();
+
+    if (overlay){
+      ctx.save();
+      ctx.globalAlpha = grayscale ? 0.18 : 0.22; // モノクロ時は少し控えめ
+      ctx.fillStyle = "#7aa6ff";
+      ctx.fillRect(x, y, w, h);
+      ctx.restore();
+    }
+  }
+
+  function erodeToDataURL(img, level, seed){
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // Lv1から強め、Lv3で全体
+    const pixelSize = (level === 1) ? 80 : (level === 2) ? 100 : 140;
+
+    // Lv2以上は「モザイク部分」をモノクロにする
+    const grayscaleMosaic = (level >= 2);
+
+    const hw = Math.floor(w / 2);
+    const hh = Math.floor(h / 2);
+
+    const quads = [
+      { x: 0,  y: 0,  w: hw,      h: hh      },
+      { x: hw, y: 0,  w: w - hw,  h: hh      },
+      { x: 0,  y: hh, w: hw,      h: h - hh  },
+      { x: hw, y: hh, w: w - hw,  h: h - hh  }
+    ];
+
+    const rnd = mulberry32(seed);
+    const idxs = [0,1,2,3];
+    for (let i = idxs.length - 1; i > 0; i--){
+      const j = Math.floor(rnd() * (i + 1));
+      [idxs[i], idxs[j]] = [idxs[j], idxs[i]];
+    }
+
+    if (level === 3){
+      applyPixelateRect(ctx, canvas, 0, 0, w, h, pixelSize, true, grayscaleMosaic);
+    } else {
+      const targets = (level === 1) ? idxs.slice(0,2) : idxs.slice(0,3);
+      for (const qi of targets){
+        const q = quads[qi];
+        applyPixelateRect(ctx, canvas, q.x, q.y, q.w, q.h, pixelSize, true, grayscaleMosaic);
+      }
+      // 十字線
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = "#ffffff";
+      const line = Math.max(3, Math.floor(Math.min(w, h) / 260));
+      ctx.fillRect(hw - Math.floor(line/2), 0, line, h);
+      ctx.fillRect(0, hh - Math.floor(line/2), w, line);
+      ctx.restore();
+    }
+
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }
+
+  // ------------------------------
+  // Cache
+  // ------------------------------
+  const urlCache = new Map(); // id -> {origURL, imgObj, erosByLevel: Map}
+  function revokeCachedURLs(){
+    for (const v of urlCache.values()){
+      if (v.origURL) URL.revokeObjectURL(v.origURL);
+    }
+    urlCache.clear();
+  }
+
+  async function ensureCacheFor(item){
+    let cache = urlCache.get(item.id);
+    if (!cache){
+      cache = { origURL: null, imgObj: null, erosByLevel: new Map() };
+      urlCache.set(item.id, cache);
+    }
+    if (!cache.origURL || !cache.imgObj){
+      const loaded = await blobToImage(item.blob);
+      cache.origURL = loaded.url;
+      cache.imgObj = loaded.img;
+    }
+    return cache;
+  }
+
+  function getDisplayURL(cache, item){
+    if (item.level <= 0) return cache.origURL;
+    let url = cache.erosByLevel.get(item.level);
+    if (!url){
+      url = erodeToDataURL(cache.imgObj, item.level, item.seed);
+      cache.erosByLevel.set(item.level, url);
+    }
+    return url;
+  }
+
+  // ------------------------------
+  // Render + concurrency guard
+  // ------------------------------
+  let currentItems = [];
+  let renderRunId = 0;
+  let refreshBusy = false;
+  let refreshQueued = false;
+
+  async function render(items){
+    const myId = ++renderRunId;
+    currentItems = items;
+
+    grid.innerHTML = "";
+    empty.style.display = (items.length === 0) ? "block" : "none";
+    countBadge.textContent = `保存枚数: ${items.length}`;
+
+    for (const item of items){
+      if (myId !== renderRunId) return;
+
+      const cache = await ensureCacheFor(item);
+      if (myId !== renderRunId) return;
+
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const imgEl = document.createElement("img");
+      imgEl.className = "thumb";
+      imgEl.alt = item.name || "photo";
+      imgEl.src = getDisplayURL(cache, item);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const left = document.createElement("div");
+      left.className = "tag";
+      left.textContent = (item.name && item.name.length > 18) ? item.name.slice(0,18) + "…" : (item.name || "photo");
+
+      const right = document.createElement("div");
+      right.className = "status";
+      right.innerHTML = (item.level > 0)
+        ? `<span class="infected">侵食 Lv.${item.level}</span><br/><span class="tag">拡大で回復</span>`
+        : `<span class="ok">正常</span>`;
+
+      card.appendChild(imgEl);
+      meta.appendChild(left);
+      meta.appendChild(right);
+      card.appendChild(meta);
+
+      card.addEventListener("click", async () => {
+        await openModalFor(item.id);
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  async function refreshFromDB(){
+    if (refreshBusy){
+      refreshQueued = true;
+      return;
+    }
+    refreshBusy = true;
+
+    try {
+      do {
+        refreshQueued = false;
+
+        revokeCachedURLs();
+
+        const items = await dbGetAll();
+        await render(items);
+
+        if (modal.classList.contains("open") && modalItemId){
+          const item = currentItems.find(x => x.id === modalItemId);
+          if (item){
+            const cache = await ensureCacheFor(item);
+            modalImg.src = getDisplayURL(cache, item);
+            updateModalChips(item);
+          }
+        }
+      } while (refreshQueued);
+    } finally {
+      refreshBusy = false;
+    }
+  }
+
+  // ------------------------------
+  // Modal logic (tap-to-heal)
+  // ------------------------------
+  let modalItemId = null;
+  let modalTapCount = 0;
+
+  async function openModalFor(id){
+    modalItemId = id;
+    modalTapCount = 0;
+
+    const item = currentItems.find(x => x.id === id);
+    if (!item) return;
+
+    const cache = await ensureCacheFor(item);
+    modalTitle.textContent = item.name || "photo";
+    modalImg.src = getDisplayURL(cache, item);
+
+    updateModalChips(item);
+    modal.classList.add("open");
+  }
+
+  function updateModalChips(item){
+    if (item.level > 0){
+      modalStatus.innerHTML = `状態: <strong>侵食 Lv.${item.level}</strong>`;
+      const totalRemaining = (item.level * TAPS_PER_LEVEL) - modalTapCount;
+      const tapsToNext = Math.max(0, TAPS_PER_LEVEL - (modalTapCount % TAPS_PER_LEVEL));
+      modalHeal.innerHTML = `回復: <strong>残り ${Math.max(0, totalRemaining)}</strong> tap（次Lvまで ${tapsToNext}）`;
+    } else {
+      modalStatus.innerHTML = `状態: <strong>正常</strong>`;
+      modalHeal.innerHTML = `回復: <strong>完了</strong>`;
+    }
+  }
+
+  modalImg.addEventListener("click", async () => {
+    const item = currentItems.find(x => x.id === modalItemId);
+    if (!item || item.level <= 0) return;
+
+    modalTapCount += 1;
+
+    if (modalTapCount % TAPS_PER_LEVEL === 0){
+      const newLevel = Math.max(0, item.level - 1);
+      item.level = newLevel;
+      await dbPut({ ...item, level: newLevel });
+    }
+
+    const cache = await ensureCacheFor(item);
+    modalImg.src = getDisplayURL(cache, item);
+    updateModalChips(item);
+
+    await refreshFromDB();
+  });
+
+  // ------------------------------
+  // Infection logic per visit
+  // ------------------------------
+  async function applyVisitInfection(items){
+    if (items.length === 0){
+      erodeBadge.textContent = `今回の侵食: 対象なし`;
+      return items;
+    }
+    const idxs = pickUniqueIndices(items.length, thisErodeCount);
+    for (const i of idxs){
+      const it = items[i];
+      const newLevel = Math.min(MAX_LEVEL, (it.level || 0) + 1);
+      if (newLevel !== it.level){
+        it.level = newLevel;
+        await dbPut(it);
+      }
+    }
+    erodeBadge.textContent = `今回の侵食: 実行 ${idxs.length}枚（各+1Lv, 最大Lv.${MAX_LEVEL}）`;
+    return items;
+  }
+
+  // ------------------------------
+  // Upload handling (persist)
+  // ------------------------------
+  fileInput.addEventListener("change", async (e) => {
+    const files = [...(e.target.files || [])].filter(f => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+
+    for (const file of files){
+      const blob = fileToBlob(file);
+      const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+      const seed = Math.floor(Math.random() * 1e9);
+      const item = { id, name: file.name || "photo", blob, seed, level: 0, createdAt: Date.now() };
+      try { await dbAdd(item); } catch { await dbPut(item); }
+    }
+
+    revokeCachedURLs();
+    const all = await dbGetAll();
+    const infected = await applyVisitInfection(all);
+    await render(infected);
+
+    fileInput.value = "";
+  });
+
+  // ------------------------------
+  // Initial load
+  // ------------------------------
+  (async () => {
+    const items = await dbGetAll();
+    const afterInfect = await applyVisitInfection(items);
+    await render(afterInfect);
+  })();
+
+  window.addEventListener("beforeunload", () => revokeCachedURLs());
+})();
+</script>
+</body>
+</html>
